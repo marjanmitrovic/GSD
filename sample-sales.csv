@@ -1,0 +1,6 @@
+sale_date,client,region,salesperson,product,category,quantity,tax_country,tax_category,cost,cost_vat_rate,price,sale_vat_rate
+2026-07-01,Prague Retail,Czechia,Emma,AI Dashboard,Software,2,czechia,standard,1200,21,3200,21
+2026-07-04,Brno Market,Czechia,David,Consulting,Services,5,czechia,standard,250,21,950,21
+2026-07-09,Balkan Trade,Serbia,Michael,Office Pack,Office Supplies,40,serbia,standard,18,20,45,20
+2026-07-12,Balkan Books,Serbia,Sophia,Book Package,Books,10,serbia,reduced,300,10,700,10
+2026-07-16,EU Custom,EU,Emma,Custom Service,Services,1,eu_custom,standard,500,0,1500,0
