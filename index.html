@@ -3,7 +3,34 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Global Sales Dashboard</title>
+    <title>GS Dashboard by Prague AI</title>
+    <style>
+      /* Prague AI compact branding override */
+      .brand-icon {
+        width: 76px !important;
+        height: 76px !important;
+        min-width: 76px !important;
+        border-radius: 22px !important;
+        background-color: rgba(52,224,198,.08) !important;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 160'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='1' x2='1' y2='0'%3E%3Cstop stop-color='%23091624'/%3E%3Cstop offset='.55' stop-color='%230c3150'/%3E%3Cstop offset='1' stop-color='%2334e0c6'/%3E%3C/linearGradient%3E%3Cfilter id='s'%3E%3CfeDropShadow dx='0' dy='0' stdDeviation='5' flood-color='%2334e0c6' flood-opacity='.55'/%3E%3C/filter%3E%3C/defs%3E%3Crect x='8' y='8' width='144' height='144' rx='34' fill='url(%23g)'/%3E%3Ccircle cx='64' cy='78' r='42' fill='none' stroke='%2334e0c6' stroke-width='5' opacity='.95'/%3E%3Cellipse cx='64' cy='78' rx='17' ry='42' fill='none' stroke='%2334e0c6' stroke-width='3' opacity='.85'/%3E%3Cpath d='M24 78h80M34 52c20 10 40 10 60 0M34 104c20-10 40-10 60 0' stroke='%2334e0c6' stroke-width='3' fill='none' opacity='.7'/%3E%3Cpath d='M48 111h14V86H48zm22 0h14V68H70zm22 0h14V50H92z' fill='%2334e0c6' opacity='.9'/%3E%3Cpath d='M32 116C72 94 100 62 128 34' stroke='white' stroke-width='8' stroke-linecap='round' filter='url(%23s)'/%3E%3Cpath d='M128 34v32M128 34H96' stroke='%2334e0c6' stroke-width='11' stroke-linecap='round'/%3E%3C/svg%3E") !important;
+        background-size: cover !important;
+        background-position: center !important;
+        border: 1px solid rgba(52,224,198,.35) !important;
+        box-shadow: 0 0 28px rgba(52,224,198,.28) !important;
+      }
+      .brand-icon svg { display: none !important; }
+      .sidebar .brand-row { gap: 14px !important; align-items: center !important; margin-bottom: 28px !important; }
+      .sidebar .brand-row h1 { font-size: 0 !important; line-height: 1.05 !important; margin: 0 !important; }
+      .sidebar .brand-row h1::after { content: "GS Dashboard"; font-size: 20px !important; font-weight: 900 !important; letter-spacing: -0.04em !important; color: #f6fbff !important; }
+      .sidebar .brand-row p { font-size: 0 !important; margin-top: 6px !important; }
+      .sidebar .brand-row p::after { content: "by Prague AI"; font-size: 13px !important; color: #9fb1c7 !important; }
+      .topbar { align-items: center !important; margin-bottom: 22px !important; }
+      .topbar > div:first-child p { font-size: 0 !important; margin: 0 0 6px !important; }
+      .topbar > div:first-child p::after { content: "BY PRAGUE AI"; font-size: 12px !important; letter-spacing: .14em !important; text-transform: uppercase !important; color: #34e0c6 !important; font-weight: 900 !important; }
+      .topbar > div:first-child h2 { font-size: 0 !important; line-height: 1 !important; margin: 0 !important; }
+      .topbar > div:first-child h2::after { content: "GS Dashboard"; font-size: clamp(28px, 3vw, 42px) !important; font-weight: 900 !important; letter-spacing: -0.055em !important; color: #f6fbff !important; }
+      @media (max-width: 760px) { .brand-icon { width: 58px !important; height: 58px !important; min-width: 58px !important; border-radius: 18px !important; } }
+    </style>
   </head>
   <body>
     <div id="root"></div>
