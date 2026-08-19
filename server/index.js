@@ -345,121 +345,100 @@ app.delete("/api/expenses/:id", requireDb, auth, async (req, res) => {
 });
 
 app.get("/api/cashflow", requireDb, auth, async (req, res) => {
-  const payments = await pool.query(
-    "select coalesce(sum(amount),0)::float as total from invoice_payments where company_id=$1",
-    [req.user.company_id]
-  );
-  const expenses = await pool.query(
-    "select coalesce(sum(gross_amount),0)::float as total from expenses where company_id=$1",
-    [req.user.company_id]
-  );
-  const invoiced = await pool.query(
-    `select coalesce(sum(sr.quantity * sr.price * (1 + sr.sale_vat_rate/100)),0)::float as total
+  const invoices = await pool.query(
+    `select coalesce(sum(sr.quantity * sr.price * (1 + sr.sale_vat_rate/100)),0)::float as invoiced
      from invoices i join sales_records sr on sr.id=i.sale_record_id
      where i.company_id=$1`,
     [req.user.company_id]
   );
+  const payments = await pool.query(
+    "select coalesce(sum(amount),0)::float as paid from invoice_payments where company_id=$1",
+    [req.user.company_id]
+  );
+  const expenses = await pool.query(
+    "select coalesce(sum(gross_amount),0)::float as expenses from expenses where company_id=$1",
+    [req.user.company_id]
+  );
   res.json({
-    cashflow: {
-      paid_in: payments.rows[0].total,
-      expenses: expenses.rows[0].total,
-      invoiced: invoiced.rows[0].total,
-      balance: payments.rows[0].total - expenses.rows[0].total
-    }
+    invoiced: invoices.rows[0].invoiced || 0,
+    paid: payments.rows[0].paid || 0,
+    expenses: expenses.rows[0].expenses || 0,
+    balance: (payments.rows[0].paid || 0) - (expenses.rows[0].expenses || 0)
   });
 });
 app.get("/api/invoices", requireDb, auth, async (req, res) => {
   const result = await pool.query(
-    `select i.*,
-            sr.client, sr.product, sr.quantity, sr.price, sr.sale_vat_rate,
-            (sr.quantity * sr.price * (1 + sr.sale_vat_rate/100))::float as total_gross,
-            coalesce((select sum(amount) from invoice_payments p where p.invoice_id=i.id),0)::float as paid_amount,
-            ((sr.quantity * sr.price * (1 + sr.sale_vat_rate/100)) - coalesce((select sum(amount) from invoice_payments p where p.invoice_id=i.id),0))::float as balance
+    `select i.*, sr.client, sr.product, sr.quantity, sr.price, sr.cost, sr.sale_vat_rate,
+       (sr.quantity * sr.price * (1 + sr.sale_vat_rate/100))::float as total_gross,
+       coalesce((select sum(amount) from invoice_payments p where p.invoice_id=i.id),0)::float as paid_amount
      from invoices i
      join sales_records sr on sr.id=i.sale_record_id
      where i.company_id=$1
-     order by i.issue_date desc, i.created_at desc`,
+     order by i.created_at desc`,
     [req.user.company_id]
   );
   res.json({ invoices: result.rows });
 });
 
-app.post("/api/invoices/:id/payments", requireDb, auth, async (req, res) => {
-  const amount = toNumber(req.body.amount, 0);
-  if (amount <= 0) return res.status(400).json({ error: "Payment amount must be greater than 0" });
-  const invoice = await pool.query(
-    `select i.*, (sr.quantity * sr.price * (1 + sr.sale_vat_rate/100))::float as total_gross,
-            coalesce((select sum(amount) from invoice_payments p where p.invoice_id=i.id),0)::float as paid_amount
-     from invoices i join sales_records sr on sr.id=i.sale_record_id
-     where i.id=$1 and i.company_id=$2`,
-    [req.params.id, req.user.company_id]
-  );
-  if (!invoice.rowCount) return res.status(404).json({ error: "Invoice not found" });
-  const inv = invoice.rows[0];
-  const result = await pool.query(
-    `insert into invoice_payments (company_id, invoice_id, amount, payment_date, method, note)
-     values ($1,$2,$3,coalesce($4::date,current_date),$5,$6)
-     returning *`,
-    [req.user.company_id, req.params.id, amount, req.body.payment_date || null, cleanText(req.body.method, null), cleanText(req.body.note, null)]
-  );
-  const newPaid = Number(inv.paid_amount) + amount;
-  const status = newPaid >= Number(inv.total_gross) - 0.01 ? "paid" : "partial";
-  await pool.query(
-    "update invoices set status=$1, paid_at=$2 where id=$3 and company_id=$4",
-    [status, status === "paid" ? (req.body.payment_date || new Date().toISOString().slice(0,10)) : null, req.params.id, req.user.company_id]
-  );
-  res.status(201).json({ payment: result.rows[0], status });
-});
-
-function nextInvoiceNumber() {
-  const y = new Date().getFullYear();
-  const rand = Math.floor(1000 + Math.random() * 9000);
-  return `INV-${y}-${rand}`;
-}
-
-app.post("/api/sales/:id/invoice", requireDb, auth, async (req, res) => {
+app.post("/api/invoices/:saleId", requireDb, auth, managerOnly, async (req, res) => {
+  const saleId = req.params.saleId;
   const sale = await pool.query(
     "select * from sales_records where id=$1 and company_id=$2",
-    [req.params.id, req.user.company_id]
+    [saleId, req.user.company_id]
   );
-  if (!sale.rowCount) return res.status(404).json({ error: "Sale not found" });
+  if (!sale.rowCount) return res.status(404).json({ error: "Sale record not found" });
+
   const existing = await pool.query(
-    "select * from invoices where company_id=$1 and sale_record_id=$2",
-    [req.user.company_id, req.params.id]
+    "select * from invoices where sale_record_id=$1 and company_id=$2",
+    [saleId, req.user.company_id]
   );
   if (existing.rowCount) return res.json({ invoice: existing.rows[0] });
-  const invoiceNo = req.body.invoice_number || nextInvoiceNumber();
+
+  const year = new Date().getFullYear();
+  const count = await pool.query("select count(*)::int as c from invoices where company_id=$1", [req.user.company_id]);
+  const invoiceNo = `INV-${year}-${String(count.rows[0].c + 1).padStart(4, "0")}`;
   const result = await pool.query(
-    `insert into invoices (company_id, sale_record_id, invoice_number, due_date, status)
-     values ($1,$2,$3,$4,'issued') returning *`,
-    [req.user.company_id, req.params.id, invoiceNo, req.body.due_date || null]
+    `insert into invoices (company_id, sale_record_id, invoice_number, issue_date, due_date, status)
+     values ($1,$2,$3,current_date,current_date + interval '14 days','issued') returning *`,
+    [req.user.company_id, saleId, invoiceNo]
   );
   res.status(201).json({ invoice: result.rows[0] });
 });
 
-app.get("/api/sales/:id/invoice/pdf", requireDb, auth, async (req, res) => {
+app.post("/api/invoices/:invoiceId/payments", requireDb, auth, async (req, res) => {
+  const invoiceId = req.params.invoiceId;
+  const inv = await pool.query("select * from invoices where id=$1 and company_id=$2", [invoiceId, req.user.company_id]);
+  if (!inv.rowCount) return res.status(404).json({ error: "Invoice not found" });
+  const amount = toNumber(req.body.amount, 0);
+  if (amount <= 0) return res.status(400).json({ error: "Payment amount must be greater than 0" });
   const result = await pool.query(
-    `select sr.*, i.invoice_number, i.issue_date, i.due_date,
-            c.name as company_name, c.company_address, c.company_tax_id, c.company_registration_id, c.company_bank_account
-     from sales_records sr
-     left join invoices i on i.sale_record_id=sr.id
-     left join companies c on c.id=sr.company_id
-     where sr.id=$1 and sr.company_id=$2`,
-    [req.params.id, req.user.company_id]
+    `insert into invoice_payments (company_id, invoice_id, amount, payment_date, method, note)
+     values ($1,$2,$3,coalesce($4::date,current_date),$5,$6) returning *`,
+    [req.user.company_id, invoiceId, amount, req.body.payment_date || null, cleanText(req.body.method, null), cleanText(req.body.note, null)]
   );
-  if (!result.rowCount) return res.status(404).json({ error: "Sale not found" });
-  res.json({ invoice: result.rows[0] });
+  res.status(201).json({ payment: result.rows[0] });
 });
 
+app.put("/api/invoices/:id/status", requireDb, auth, async (req, res) => {
+  const status = cleanText(req.body.status || "issued");
+  const allowed = ["issued", "partial", "paid", "cancelled"];
+  if (!allowed.includes(status)) return res.status(400).json({ error: "Invalid status" });
+  const result = await pool.query(
+    "update invoices set status=$1, paid_at=case when $1='paid' then current_date else paid_at end where id=$2 and company_id=$3 returning *",
+    [status, req.params.id, req.user.company_id]
+  );
+  if (!result.rowCount) return res.status(404).json({ error: "Invoice not found" });
+  res.json({ invoice: result.rows[0] });
+});
 app.get("/api/sales", requireDb, auth, async (req, res) => {
   const result = await pool.query(
     "select * from sales_records where company_id=$1 order by sale_date desc, created_at desc",
     [req.user.company_id]
   );
-  res.json({ records: result.rows });
+  res.json({ rows: result.rows });
 });
 
-app.post("/api/sales", requireDb, auth, managerOnly, async (req, res) => {
+app.post("/api/sales", requireDb, auth, async (req, res) => {
   const row = req.body;
   const error = validateSale(row);
   if (error) return res.status(400).json({ error });
@@ -487,40 +466,21 @@ app.post("/api/sales", requireDb, auth, managerOnly, async (req, res) => {
       cleanText(row.tax_category || "standard")
     ]
   );
-  res.status(201).json({ record: result.rows[0] });
+  res.status(201).json({ row: result.rows[0] });
 });
 
-app.put("/api/sales/:id", requireDb, auth, managerOnly, async (req, res) => {
+app.put("/api/sales/:id", requireDb, auth, async (req, res) => {
   const row = req.body;
   const error = validateSale(row);
   if (error) return res.status(400).json({ error });
+
   const result = await pool.query(
-    `update sales_records set
-      sale_date=$1, client=$2, region=$3, salesperson=$4, product=$5, category=$6,
-      quantity=$7, cost=$8, price=$9, cost_vat_rate=$10, sale_vat_rate=$11,
-      tax_country=$12, tax_category=$13
-     where id=$14 and company_id=$15
-     returning *`,
-    [
-      row.sale_date,
-      cleanText(row.client),
-      cleanText(row.region),
-      cleanText(row.salesperson),
-      cleanText(row.product),
-      cleanText(row.category),
-      toNumber(row.quantity, 1),
-      toNumber(row.cost, 0),
-      toNumber(row.price, 0),
-      toNumber(row.cost_vat_rate, 0),
-      toNumber(row.sale_vat_rate, 0),
-      cleanText(row.tax_country || "custom"),
-      cleanText(row.tax_category || "standard"),
-      req.params.id,
-      req.user.company_id
-    ]
+    `update sales_records set sale_date=$1, client=$2, region=$3, salesperson=$4, product=$5, category=$6, quantity=$7, cost=$8, price=$9, cost_vat_rate=$10, sale_vat_rate=$11, tax_country=$12, tax_category=$13
+     where id=$14 and company_id=$15 returning *`,
+    [row.sale_date, cleanText(row.client), cleanText(row.region), cleanText(row.salesperson), cleanText(row.product), cleanText(row.category), toNumber(row.quantity, 1), toNumber(row.cost, 0), toNumber(row.price, 0), toNumber(row.cost_vat_rate, 0), toNumber(row.sale_vat_rate, 0), cleanText(row.tax_country || "custom"), cleanText(row.tax_category || "standard"), req.params.id, req.user.company_id]
   );
-  if (!result.rowCount) return res.status(404).json({ error: "Sale not found" });
-  res.json({ record: result.rows[0] });
+  if (!result.rowCount) return res.status(404).json({ error: "Record not found" });
+  res.json({ row: result.rows[0] });
 });
 
 app.delete("/api/sales/:id", requireDb, auth, managerOnly, async (req, res) => {
@@ -528,107 +488,49 @@ app.delete("/api/sales/:id", requireDb, auth, managerOnly, async (req, res) => {
     "delete from sales_records where id=$1 and company_id=$2 returning id",
     [req.params.id, req.user.company_id]
   );
-  if (!result.rowCount) return res.status(404).json({ error: "Sale not found" });
+  if (!result.rowCount) return res.status(404).json({ error: "Record not found" });
   res.json({ ok: true });
 });
 
-app.post("/api/import", requireDb, auth, managerOnly, upload.single("file"), async (req, res) => {
+app.post("/api/import", requireDb, auth, upload.single("file"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "CSV file is required" });
-  const csv = req.file.buffer.toString("utf8");
-  const records = parse(csv, { columns: true, skip_empty_lines: true, trim: true });
+  const text = req.file.buffer.toString("utf8");
+  const records = parse(text, { columns: true, skip_empty_lines: true, trim: true });
+  const inserted = [];
 
-  const client = await pool.connect();
-  let inserted = 0;
-  try {
-    await client.query("begin");
-    for (const r of records) {
-      const row = {
-        sale_date: r.sale_date || r.date || r.Date,
-        client: r.client || r.customer || r.Client,
-        region: r.region || r.Region || "Global",
-        salesperson: r.salesperson || r.seller || r.Salesperson || "Team",
-        product: r.product || r.Product,
-        category: r.category || r.Category || "General",
-        quantity: r.quantity || r.qty || 1,
-        cost: r.cost || 0,
-        price: r.price || 0,
-        cost_vat_rate: r.cost_vat_rate || r.input_vat || r.costVat || 0,
-        sale_vat_rate: r.sale_vat_rate || r.output_vat || r.saleVat || 0,
-        tax_country: r.tax_country || "custom",
-        tax_category: r.tax_category || "standard"
-      };
-      const error = validateSale(row);
-      if (error) throw new Error(`CSV row ${inserted + 1}: ${error}`);
-      await client.query(
-        `insert into sales_records
-         (company_id, user_id, sale_date, client, region, salesperson, product, category, quantity, cost, price, cost_vat_rate, sale_vat_rate, tax_country, tax_category)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
-        [
-          req.user.company_id, req.user.id, row.sale_date, cleanText(row.client), cleanText(row.region),
-          cleanText(row.salesperson), cleanText(row.product), cleanText(row.category),
-          toNumber(row.quantity, 1), toNumber(row.cost, 0), toNumber(row.price, 0),
-          toNumber(row.cost_vat_rate, 0), toNumber(row.sale_vat_rate, 0), cleanText(row.tax_country || "custom"), cleanText(row.tax_category || "standard")
-        ]
-      );
-      inserted++;
-    }
-    await client.query("commit");
-    res.json({ inserted });
-  } catch (error) {
-    await client.query("rollback");
-    res.status(400).json({ error: error.message });
-  } finally {
-    client.release();
-  }
-});
-
-app.get("/api/users", requireDb, auth, managerOnly, async (req, res) => {
-  const result = await pool.query(
-    "select id, email, full_name, role, created_at from users_app where company_id=$1 order by created_at",
-    [req.user.company_id]
-  );
-  res.json({ users: result.rows });
-});
-
-app.post("/api/users", requireDb, auth, managerOnly, async (req, res) => {
-  const { email, password, full_name, role } = req.body;
-  if (!email || !password) return res.status(400).json({ error: "email and password are required" });
-  const safeRole = ["admin", "manager", "user"].includes(role) ? role : "user";
-  const hash = await bcrypt.hash(password, 12);
-  try {
+  for (const record of records) {
+    const row = {
+      sale_date: record.sale_date || record.date || record.Date,
+      client: record.client || record.Client,
+      region: record.region || record.Region,
+      salesperson: record.salesperson || record.Salesperson,
+      product: record.product || record.Product,
+      category: record.category || record.Category,
+      quantity: record.quantity || record.Quantity,
+      cost: record.cost || record.Cost,
+      price: record.price || record.Price,
+      cost_vat_rate: record.cost_vat_rate || record.CostVAT || 0,
+      sale_vat_rate: record.sale_vat_rate || record.SaleVAT || 0,
+      tax_country: record.tax_country || record.TaxCountry || "custom",
+      tax_category: record.tax_category || record.TaxCategory || "standard"
+    };
+    const error = validateSale(row);
+    if (error) continue;
     const result = await pool.query(
-      `insert into users_app (company_id, email, password_hash, full_name, role)
-       values ($1,$2,$3,$4,$5)
-       returning id, email, full_name, role, created_at`,
-      [req.user.company_id, email.toLowerCase(), hash, full_name || null, safeRole]
+      `insert into sales_records
+       (company_id, user_id, sale_date, client, region, salesperson, product, category, quantity, cost, price, cost_vat_rate, sale_vat_rate, tax_country, tax_category)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+       returning *`,
+      [req.user.company_id, req.user.id, row.sale_date, cleanText(row.client), cleanText(row.region), cleanText(row.salesperson), cleanText(row.product), cleanText(row.category), toNumber(row.quantity, 1), toNumber(row.cost, 0), toNumber(row.price, 0), toNumber(row.cost_vat_rate, 0), toNumber(row.sale_vat_rate, 0), cleanText(row.tax_country), cleanText(row.tax_category)]
     );
-    res.status(201).json({ user: result.rows[0] });
-  } catch (error) {
-    if (String(error.message).includes("duplicate")) return res.status(409).json({ error: "Email already exists" });
-    res.status(500).json({ error: error.message });
+    inserted.push(result.rows[0]);
   }
+  res.json({ inserted });
 });
 
-app.put("/api/users/:id", requireDb, auth, managerOnly, async (req, res) => {
-  const { full_name, role } = req.body;
-  const safeRole = ["admin", "manager", "user"].includes(role) ? role : "user";
-  const result = await pool.query(
-    `update users_app set full_name=$1, role=$2 where id=$3 and company_id=$4
-     returning id, email, full_name, role, created_at`,
-    [full_name || null, safeRole, req.params.id, req.user.company_id]
-  );
-  if (!result.rowCount) return res.status(404).json({ error: "User not found" });
-  res.json({ user: result.rows[0] });
-});
-
-app.delete("/api/users/:id", requireDb, auth, managerOnly, async (req, res) => {
-  if (req.params.id === req.user.id) return res.status(400).json({ error: "You cannot delete your own account" });
-  const result = await pool.query(
-    "delete from users_app where id=$1 and company_id=$2 returning id",
-    [req.params.id, req.user.company_id]
-  );
-  if (!result.rowCount) return res.status(404).json({ error: "User not found" });
-  res.json({ ok: true });
+app.get("/api/company", requireDb, auth, async (req, res) => {
+  const company = await pool.query("select * from companies where id=$1", [req.user.company_id]);
+  res.json({ company: company.rows[0] });
 });
 
 app.put("/api/company", requireDb, auth, managerOnly, async (req, res) => {
@@ -638,18 +540,53 @@ app.put("/api/company", requireDb, auth, managerOnly, async (req, res) => {
      set currency=$1, default_region=$2, report_note=$3,
          company_address=$4, company_tax_id=$5, company_registration_id=$6, company_bank_account=$7
      where id=$8 returning *`,
-    [
-      cleanText(currency || "USD"),
-      cleanText(default_region, null),
-      cleanText(report_note, null),
-      cleanText(company_address, null),
-      cleanText(company_tax_id, null),
-      cleanText(company_registration_id, null),
-      cleanText(company_bank_account, null),
-      req.user.company_id
-    ]
+    [cleanText(currency || "USD"), cleanText(default_region, null), cleanText(report_note, null), cleanText(company_address, null), cleanText(company_tax_id, null), cleanText(company_registration_id, null), cleanText(company_bank_account, null), req.user.company_id]
   );
   res.json({ company: result.rows[0] });
+});
+
+app.get("/api/users", requireDb, auth, managerOnly, async (req, res) => {
+  const users = await pool.query("select id, email, full_name, role, created_at from users_app where company_id=$1 order by created_at", [req.user.company_id]);
+  res.json({ users: users.rows });
+});
+
+app.post("/api/users", requireDb, auth, managerOnly, async (req, res) => {
+  const { email, password, full_name, role } = req.body;
+  if (!email || !password) return res.status(400).json({ error: "email and password required" });
+  const safeRole = ["admin", "manager", "user"].includes(role) ? role : "user";
+  const hash = await bcrypt.hash(password, 12);
+  try {
+    const result = await pool.query(
+      `insert into users_app (company_id, email, password_hash, full_name, role)
+       values ($1,$2,$3,$4,$5) returning id, email, full_name, role, created_at`,
+      [req.user.company_id, String(email).toLowerCase(), hash, cleanText(full_name, null), safeRole]
+    );
+    res.status(201).json({ user: result.rows[0] });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.put("/api/users/:id", requireDb, auth, managerOnly, async (req, res) => {
+  const { full_name, role, password } = req.body;
+  const safeRole = ["admin", "manager", "user"].includes(role) ? role : "user";
+  if (password) {
+    const hash = await bcrypt.hash(password, 12);
+    await pool.query("update users_app set password_hash=$1 where id=$2 and company_id=$3", [hash, req.params.id, req.user.company_id]);
+  }
+  const result = await pool.query(
+    "update users_app set full_name=$1, role=$2 where id=$3 and company_id=$4 returning id, email, full_name, role, created_at",
+    [cleanText(full_name, null), safeRole, req.params.id, req.user.company_id]
+  );
+  if (!result.rowCount) return res.status(404).json({ error: "User not found" });
+  res.json({ user: result.rows[0] });
+});
+
+app.delete("/api/users/:id", requireDb, auth, managerOnly, async (req, res) => {
+  if (req.params.id === req.user.id) return res.status(400).json({ error: "You cannot delete your own account" });
+  const result = await pool.query("delete from users_app where id=$1 and company_id=$2 returning id", [req.params.id, req.user.company_id]);
+  if (!result.rowCount) return res.status(404).json({ error: "User not found" });
+  res.json({ ok: true });
 });
 
 app.get("/api/backup", requireDb, auth, managerOnly, async (req, res) => {
@@ -671,167 +608,6 @@ app.get("/api/backup", requireDb, auth, managerOnly, async (req, res) => {
     users: users.rows,
     sales_records: sales.rows
   });
-});
-
-// Temporary one-time demo seeding endpoint.
-// Security: works only when DEMO_SEED_KEY is configured in Render environment.
-// After demo data is inserted, remove this route or delete DEMO_SEED_KEY.
-app.get("/api/admin/seed-demo", requireDb, async (req, res) => {
-  const key = String(req.query.key || "");
-  if (!process.env.DEMO_SEED_KEY || key !== process.env.DEMO_SEED_KEY) {
-    return res.status(403).json({ error: "Invalid or missing DEMO_SEED_KEY" });
-  }
-
-  const client = await pool.connect();
-  try {
-    await client.query("begin");
-
-    const existing = await client.query(
-      "select company_id from users_app where email=$1",
-      ["demo@pragueai.cz"]
-    );
-
-    if (existing.rowCount && existing.rows[0].company_id) {
-      await client.query("delete from companies where id=$1", [existing.rows[0].company_id]);
-    }
-
-    const company = await client.query(
-      `insert into companies
-       (name, currency, default_region, report_note, company_address, company_tax_id, company_registration_id, company_bank_account)
-       values ($1,$2,$3,$4,$5,$6,$7,$8)
-       returning id`,
-      [
-        "Prague AI Demo Company",
-        "EUR",
-        "Europe",
-        "Demo data for client presentation.",
-        "Prague, Czech Republic",
-        "CZ12345678",
-        "12345678",
-        "CZ00 0000 0000 0000 0000 0000"
-      ]
-    );
-    const companyId = company.rows[0].id;
-
-    const hash = await bcrypt.hash("Demo2026!", 12);
-    await client.query(
-      `insert into users_app (company_id, email, password_hash, full_name, role)
-       values ($1,$2,$3,$4,'admin')`,
-      [companyId, "demo@pragueai.cz", hash, "Demo Admin"]
-    );
-
-    const customers = [
-      ["Astra Retail s.r.o.", "office@astraretail.cz", "+420 222 100 100", "Praha, Czech Republic", "CZ10101010", "Europe"],
-      ["Northstar Consulting", "hello@northstar.example", "+1 555 240 140", "New York, USA", "US-NS-2026", "North America"],
-      ["Casa Living GmbH", "info@casaliving.example", "+49 30 400 900", "Berlin, Germany", "DE99887766", "Europe"],
-      ["Tokyo Studio", "accounts@tokyostudio.example", "+81 3 1000 2000", "Tokyo, Japan", "JP-TS-88", "Asia"],
-      ["Beta Market", "finance@betamarket.example", "+420 777 222 333", "Brno, Czech Republic", "CZ55667788", "Europe"]
-    ];
-
-    for (const c of customers) {
-      await client.query(
-        `insert into customers (company_id, name, email, phone, address, tax_id, region)
-         values ($1,$2,$3,$4,$5,$6,$7)`,
-        [companyId, ...c]
-      );
-    }
-
-    const products = [
-      ["Analytics Setup", "Software", 700, 1700, "czechia", "standard", 21, 21],
-      ["Dashboard License", "Software", 180, 540, "czechia", "standard", 21, 21],
-      ["Office Pack", "Office Supplies", 18, 42, "czechia", "standard", 21, 21],
-      ["Furniture Set", "Furniture", 520, 950, "czechia", "standard", 21, 21],
-      ["Consulting", "Services", 300, 1150, "czechia", "standard", 21, 21],
-      ["AI Sales Audit", "Services", 250, 900, "czechia", "standard", 21, 21]
-    ];
-
-    for (const p of products) {
-      await client.query(
-        `insert into products
-         (company_id, name, category, default_cost, default_price, tax_country, tax_category, cost_vat_rate, sale_vat_rate)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-        [companyId, ...p]
-      );
-    }
-
-    const sales = [
-      ["2026-01-05", "Astra Retail s.r.o.", "Europe", "Emma", "Analytics Setup", "Software", 3, 700, 1700, 21, 21, "czechia", "standard", "GSD-2026-001", 6171, "paid"],
-      ["2026-01-19", "Northstar Consulting", "North America", "John", "Dashboard License", "Software", 8, 180, 540, 21, 21, "czechia", "standard", "GSD-2026-002", 5227.20, "paid"],
-      ["2026-02-07", "Casa Living GmbH", "Europe", "David", "Office Pack", "Office Supplies", 34, 18, 42, 21, 21, "czechia", "standard", "GSD-2026-003", 900, "partial"],
-      ["2026-02-21", "Tokyo Studio", "Asia", "Sophia", "Furniture Set", "Furniture", 7, 520, 950, 21, 21, "czechia", "standard", "GSD-2026-004", 0, "issued"],
-      ["2026-03-12", "Desert Cloud", "Middle East", "Michael", "Consulting", "Services", 5, 300, 1150, 21, 21, "czechia", "standard", "GSD-2026-005", 6957.50, "paid"],
-      ["2026-03-29", "Beta Market", "Europe", "Emma", "AI Sales Audit", "Services", 4, 250, 900, 21, 21, "czechia", "standard", "GSD-2026-006", 2178, "partial"]
-    ];
-
-    for (const s of sales) {
-      const sale = await client.query(
-        `insert into sales_records
-         (company_id, user_id, sale_date, client, region, salesperson, product, category, quantity, cost, price, cost_vat_rate, sale_vat_rate, tax_country, tax_category)
-         values ($1,null,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
-         returning id`,
-        [companyId, ...s.slice(0, 13)]
-      );
-
-      const issueDate = s[0];
-      const dueDate = new Date(`${issueDate}T00:00:00`);
-      dueDate.setDate(dueDate.getDate() + 14);
-      const invoice = await client.query(
-        `insert into invoices (company_id, sale_record_id, invoice_number, issue_date, due_date, status, paid_at, note)
-         values ($1,$2,$3,$4,$5,$6,$7,$8)
-         returning id`,
-        [
-          companyId,
-          sale.rows[0].id,
-          s[13],
-          issueDate,
-          dueDate.toISOString().slice(0, 10),
-          s[15],
-          s[15] === "paid" ? issueDate : null,
-          "Demo invoice"
-        ]
-      );
-
-      if (Number(s[14]) > 0) {
-        await client.query(
-          `insert into invoice_payments (company_id, invoice_id, amount, payment_date, method, note)
-           values ($1,$2,$3,$4,$5,$6)`,
-          [companyId, invoice.rows[0].id, s[14], issueDate, "Bank transfer", "Demo payment"]
-        );
-      }
-    }
-
-    const expenses = [
-      ["2026-01-10", "Render", "Hosting", "Cloud hosting", 25, 21],
-      ["2026-01-12", "Neon", "Database", "PostgreSQL database", 19, 21],
-      ["2026-02-05", "Freelance Designer", "Design", "PDF invoice design", 420, 0],
-      ["2026-02-18", "Google Ads", "Marketing", "Campaign test", 350, 21],
-      ["2026-03-02", "Office Depot", "Office", "Office supplies", 145, 21],
-      ["2026-03-15", "External Consultant", "Consulting", "Sales process setup", 780, 0]
-    ];
-
-    for (const e of expenses) {
-      await client.query(
-        `insert into expenses (company_id, expense_date, supplier, category, description, net_amount, vat_rate)
-         values ($1,$2,$3,$4,$5,$6,$7)`,
-        [companyId, ...e]
-      );
-    }
-
-    await client.query("commit");
-    res.json({
-      ok: true,
-      message: "Demo data created",
-      login: {
-        email: "demo@pragueai.cz",
-        password: "Demo2026!"
-      }
-    });
-  } catch (error) {
-    await client.query("rollback");
-    res.status(500).json({ ok: false, error: error.message });
-  } finally {
-    client.release();
-  }
 });
 
 const __filename = fileURLToPath(import.meta.url);
