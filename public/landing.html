@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="sr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Global Sales Dashboard by Prague AI</title>
+  <style>
+    :root{--bg:#08111f;--panel:#0d1a2c;--muted:#9fb1c7;--text:#f6fbff;--accent:#34e0c6;--line:rgba(255,255,255,.12);--soft:rgba(52,224,198,.12)}
+    *{box-sizing:border-box} body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;background:radial-gradient(circle at top left,#11375b 0,#08111f 38%,#050912 100%);color:var(--text);line-height:1.55} a{color:inherit;text-decoration:none}
+    .wrap{max-width:1160px;margin:0 auto;padding:28px 20px 70px}.nav{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:72px}.brand{display:flex;align-items:center;gap:14px}.logo{width:58px;height:58px;border-radius:18px;background:linear-gradient(135deg,#091624,#0c3150 55%,#34e0c6);box-shadow:0 0 28px rgba(52,224,198,.28);position:relative;overflow:hidden;border:1px solid rgba(52,224,198,.35)}.logo:before{content:"";position:absolute;inset:16px;border:3px solid var(--accent);border-radius:50%;opacity:.9}.logo:after{content:"";position:absolute;width:70px;height:8px;background:white;transform:rotate(-38deg);left:16px;top:82px;box-shadow:0 0 18px rgba(52,224,198,.7)}.brand h1{font-size:18px;margin:0;letter-spacing:-.04em}.brand p{margin:1px 0 0;color:var(--muted);font-size:13px}.navlinks{display:flex;gap:10px;align-items:center}.btn{display:inline-flex;align-items:center;justify-content:center;padding:12px 18px;border-radius:999px;border:1px solid var(--line);font-weight:800;background:rgba(255,255,255,.06)}.btn.primary{background:var(--accent);color:#06111e;border-color:var(--accent);box-shadow:0 12px 38px rgba(52,224,198,.22)}
+    .hero{display:grid;grid-template-columns:1.05fr .95fr;gap:34px;align-items:center}.badge{display:inline-flex;border:1px solid rgba(52,224,198,.35);background:var(--soft);color:var(--accent);border-radius:999px;padding:8px 12px;font-weight:900;font-size:12px;letter-spacing:.12em;text-transform:uppercase}.hero h2{font-size:clamp(42px,6vw,72px);line-height:.96;margin:20px 0 18px;letter-spacing:-.07em}.hero p{font-size:19px;color:var(--muted);max-width:650px}.cta{display:flex;gap:12px;flex-wrap:wrap;margin-top:28px}.screen{background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.03));border:1px solid var(--line);border-radius:28px;padding:18px;box-shadow:0 30px 80px rgba(0,0,0,.35)}.screen-top{display:flex;gap:8px;margin-bottom:16px}.dot{width:10px;height:10px;border-radius:50%;background:rgba(255,255,255,.28)}.mock{display:grid;grid-template-columns:1fr 1fr;gap:12px}.card{background:rgba(8,17,31,.72);border:1px solid var(--line);border-radius:20px;padding:18px}.card small{color:var(--muted);font-weight:800}.card strong{display:block;font-size:28px;margin-top:8px}.wide{grid-column:1/-1}.bar{height:10px;border-radius:999px;background:rgba(255,255,255,.09);overflow:hidden;margin:12px 0}.bar span{display:block;height:100%;background:var(--accent);border-radius:999px}.section{margin-top:82px}.section h3{font-size:36px;letter-spacing:-.05em;margin:0 0 18px}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.feature,.price{background:rgba(255,255,255,.055);border:1px solid var(--line);border-radius:24px;padding:22px}.feature h4,.price h4{margin:0 0 8px;font-size:20px}.feature p,.price p{color:var(--muted);margin:0}.price strong{display:block;font-size:32px;margin:14px 0}.list{margin:18px 0 0;padding:0;list-style:none;color:var(--muted)}.list li{margin:8px 0}.list li:before{content:"✓";color:var(--accent);font-weight:900;margin-right:8px}.foot{margin-top:80px;padding-top:24px;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:16px;color:var(--muted);font-size:14px}
+    @media(max-width:850px){.hero,.grid{grid-template-columns:1fr}.nav{align-items:flex-start;flex-direction:column;margin-bottom:42px}.navlinks{width:100%;flex-wrap:wrap}.hero h2{font-size:44px}.screen{padding:12px}.mock{grid-template-columns:1fr}.foot{flex-direction:column}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <nav class="nav">
+      <div class="brand"><div class="logo"></div><div><h1>Global Sales Dashboard</h1><p>by Prague AI</p></div></div>
+      <div class="navlinks"><a class="btn" href="#pricing">Cenovnik</a><a class="btn primary" href="/">Otvori aplikaciju</a></div>
+    </nav>
+
+    <section class="hero">
+      <div>
+        <span class="badge">Sales • Invoices • Cashflow</span>
+        <h2>Jednostavan poslovni dashboard za prodaju i novac.</h2>
+        <p>Global Sales Dashboard pomaže malim firmama, freelancerima i agencijama da prate prodaju, kupce, proizvode, račune, uplate, troškove i cashflow bez komplikovanog ERP sistema.</p>
+        <div class="cta"><a class="btn primary" href="/">Pokreni aplikaciju</a><a class="btn" href="#features">Šta dobijaš</a></div>
+      </div>
+      <div class="screen">
+        <div class="screen-top"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+        <div class="mock">
+          <div class="card"><small>Revenue</small><strong>€12,480</strong></div>
+          <div class="card"><small>Cashflow</small><strong>€4,920</strong></div>
+          <div class="card wide"><small>Invoices paid</small><div class="bar"><span style="width:78%"></span></div><p>Uplate, troškovi i stanje novca na jednom mestu.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="features">
+      <h3>Profesionalno, ali bez previše komplikacija.</h3>
+      <div class="grid">
+        <div class="feature"><h4>Prodaja i kupci</h4><p>Unos prodaje, baza kupaca i proizvoda/usluga sa cenama i PDV stopama.</p></div>
+        <div class="feature"><h4>Računi i uplate</h4><p>PDF račun, status računa, delimične uplate i pregled ostatka za plaćanje.</p></div>
+        <div class="feature"><h4>Troškovi i cashflow</h4><p>Unos troškova i brz pregled koliko je fakturisano, plaćeno i potrošeno.</p></div>
+      </div>
+    </section>
+
+    <section class="section" id="pricing">
+      <h3>Jednostavan cenovnik</h3>
+      <div class="grid">
+        <div class="price"><h4>Start</h4><p>Za freelancere i male timove.</p><strong>od 990 Kč</strong><ul class="list"><li>Osnovno podešavanje</li><li>Prodaja, računi, kupci</li><li>Render + Neon deploy</li></ul></div>
+        <div class="price"><h4>Business</h4><p>Za firmu koja želi spremnu radnu verziju.</p><strong>od 2 900 Kč</strong><ul class="list"><li>Logo i boje firme</li><li>PDF račun</li><li>Cashflow i troškovi</li></ul></div>
+        <div class="price"><h4>Custom</h4><p>Za dodatne zahteve.</p><strong>po dogovoru</strong><ul class="list"><li>Custom domen</li><li>Poseban dizajn</li><li>Dodatne funkcije</li></ul></div>
+      </div>
+    </section>
+
+    <footer class="foot"><span>Global Sales Dashboard by Prague AI</span><span>Kontakt: marjan.posao@gmail.com</span></footer>
+  </div>
+</body>
+</html>
